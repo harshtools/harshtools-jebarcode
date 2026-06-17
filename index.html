@@ -413,11 +413,7 @@ body:not(.light) .sku-cell { color: #e0e8ff; }
     Print Selected
   </button>
 
-  <!-- Download -->
-  <button class="btn btn-outline" onclick="downloadSelected()">
-    <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-    Download PDF
-  </button>
+
 
 
 
@@ -951,123 +947,79 @@ ${labelsHTML}
 }
 
 // ── DOWNLOAD PDF ──
-function downloadSelected() {
+async function downloadSelected() {
   if (selected.size === 0) { alert('Please select at least one item to download.'); return; }
 
-  let labelsHTML = '';
+  // Show loading indicator
+  const btn = event.target.closest('button');
+  const origText = btn.innerHTML;
+  btn.innerHTML = '⏳ Generating...';
+  btn.disabled = true;
+
+  // Load jsPDF if not already loaded
+  if (!window.jspdf) {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+
+  // Build hidden render area
+  const renderArea = document.createElement('div');
+  renderArea.style.cssText = 'position:fixed;left:-9999px;top:0;background:#fff;';
+
   selected.forEach(idx => {
     const item = DATA[idx];
     const sku = item['SKU'];
     const label = item['Barcode Lable'];
     const qty = rowQty.get(idx) || 1;
     for (let q = 0; q < qty; q++) {
-      labelsHTML += `<div class="label-card"><div class="lbl-top">${sku}</div><svg class="bc" data-val="${label}"></svg><div class="lbl-bottom">${label}</div></div>`;
+      const card = document.createElement('div');
+      card.style.cssText = 'width:378px;height:200px;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 16px;font-family:Helvetica Neue,Arial,sans-serif;overflow:hidden;';
+      card.innerHTML = `<div style="font-size:22px;font-weight:500;text-align:center;margin-bottom:4px;width:100%;">${sku}</div><svg class="bc" data-val="${label}" style="width:94%;display:block;"></svg><div style="font-size:20px;font-weight:700;text-align:center;margin-top:4px;width:100%;">${label}</div>`;
+      renderArea.appendChild(card);
     }
   });
+  document.body.appendChild(renderArea);
 
-  const downloadWin = window.open('', '_blank', 'width=800,height=600');
-  downloadWin.document.write(`<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Download Labels</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"><\/script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"><\/script>
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#1a1814; display:flex; align-items:center; justify-content:center; min-height:100vh; font-family:Arial,sans-serif; }
-  #status {
-    color:#fff; text-align:center; padding:40px;
-  }
-  #status .icon { font-size:48px; margin-bottom:16px; }
-  #status .msg { font-size:16px; color:#aaa; margin-bottom:8px; }
-  #status .sub { font-size:13px; color:#666; }
-  #status .progress {
-    width:200px; height:4px; background:#333; border-radius:2px; margin:16px auto 0;
-    overflow:hidden;
-  }
-  #status .progress-bar {
-    height:100%; background:#c8411a; border-radius:2px;
-    animation: prog 2s ease-in-out infinite;
-  }
-  @keyframes prog { 0%{width:0%} 70%{width:85%} 100%{width:95%} }
-
-  /* hidden render area */
-  #renderArea {
-    position:fixed; left:-9999px; top:0;
-    background:#fff;
-  }
-  .label-card {
-    width: 378px;
-    height: 200px;
-    background: #fff;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 8px 16px;
-    font-family: 'Helvetica Neue', Arial, sans-serif;
-    overflow: hidden;
-  }
-  .lbl-top { font-size: 22px; font-weight: 500; text-align:center; margin-bottom:4px; line-height:1.1; width:100%; }
-  .lbl-bottom { font-size: 20px; font-weight: 700; text-align:center; margin-top:4px; width:100%; }
-  svg.bc { width:94% !important; max-width:94%; display:block; }
-</style>
-</head>
-<body>
-<div id="status">
-  <div class="icon">⬇️</div>
-  <div class="msg">Generating PDF…</div>
-  <div class="sub">Please wait, building your labels</div>
-  <div class="progress"><div class="progress-bar"></div></div>
-</div>
-<div id="renderArea">${labelsHTML}</div>
-<script>
-window.onload = async function() {
-  // Step 1: render all barcodes
-  document.querySelectorAll('svg.bc').forEach(function(svg) {
-    var val = svg.getAttribute('data-val');
+  // Render barcodes
+  renderArea.querySelectorAll('svg.bc').forEach(svg => {
     try {
-      JsBarcode(svg, val, {
-        format: 'CODE128', width: 3, height: 105,
-        displayValue: false, margin: 0,
-        background: '#ffffff', lineColor: '#000000'
+      JsBarcode(svg, svg.getAttribute('data-val'), {
+        format:'CODE128', width:3, height:105,
+        displayValue:false, margin:0,
+        background:'#ffffff', lineColor:'#000000'
       });
     } catch(e) {}
   });
 
-  await new Promise(r => setTimeout(r, 1200));
+  await new Promise(r => setTimeout(r, 800));
 
-  // Step 2: use jsPDF to create PDF
+  // Generate PDF
   const { jsPDF } = window.jspdf;
-  // 100mm x 53mm per label
   const W = 100, H = 53;
-  const pdf = new jsPDF({ unit: 'mm', format: [W, H], orientation: 'landscape' });
+  const pdf = new jsPDF({ unit:'mm', format:[W,H], orientation:'landscape' });
+  const cards = renderArea.querySelectorAll('div');
 
-  const cards = document.querySelectorAll('.label-card');
   for (let i = 0; i < cards.length; i++) {
-    if (i > 0) pdf.addPage([W, H], 'landscape');
+    if (i > 0) pdf.addPage([W,H], 'landscape');
     const card = cards[i];
-
-    // Draw white background
     pdf.setFillColor(255,255,255);
-    pdf.rect(0, 0, W, H, 'F');
+    pdf.rect(0,0,W,H,'F');
 
-    // Get SKU and label text from card
-    const topEl = card.querySelector('.lbl-top');
-    const botEl = card.querySelector('.lbl-bottom');
-    const skuText = topEl ? topEl.textContent : '';
-    const lblText = botEl ? botEl.textContent : '';
-
-    // Get barcode SVG as image via canvas
+    const skuText = card.querySelector('div:first-child')?.textContent || '';
+    const lblText = card.querySelector('div:last-child')?.textContent || '';
     const svgEl = card.querySelector('svg.bc');
+
     let barcodeDataUrl = null;
     if (svgEl) {
       try {
         const svgData = new XMLSerializer().serializeToString(svgEl);
         const svgBlob = new Blob([svgData], {type:'image/svg+xml;charset=utf-8'});
         const url = URL.createObjectURL(svgBlob);
-        await new Promise((res, rej) => {
+        await new Promise(res => {
           const img = new Image();
           img.onload = function() {
             const cvs = document.createElement('canvas');
@@ -1087,59 +1039,32 @@ window.onload = async function() {
       } catch(e) {}
     }
 
-    // Layout: top text, barcode, bottom text
-    const marginX = 3;
-    const usableW = W - marginX * 2;
     let y = 3;
-
-    // SKU text (top)
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(14);
-    pdf.setTextColor(0,0,0);
-    pdf.text(skuText, W/2, y + 5, { align:'center' });
-    y += 9;
-
-    // Barcode image
+    pdf.setFont('helvetica','normal'); pdf.setFontSize(14); pdf.setTextColor(0,0,0);
+    pdf.text(skuText, W/2, y+5, {align:'center'}); y += 9;
     if (barcodeDataUrl) {
-      const bW = usableW * 0.94;
-      const bH = 26;
-      const bX = (W - bW) / 2;
-      pdf.addImage(barcodeDataUrl, 'PNG', bX, y, bW, bH);
-      y += bH + 2;
-    } else {
-      y += 28;
-    }
-
-    // Label text (bottom) - bold
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(13);
-    pdf.text(lblText, W/2, y + 5, { align:'center' });
+      const bW = (W-6)*0.94, bH = 26, bX = (W-bW)/2;
+      pdf.addImage(barcodeDataUrl,'PNG',bX,y,bW,bH); y += bH+2;
+    } else { y += 28; }
+    pdf.setFont('helvetica','bold'); pdf.setFontSize(13);
+    pdf.text(lblText, W/2, y+5, {align:'center'});
   }
 
-  // Step 3: save
-  const count = cards.length;
-  pdf.save('Bullane_Barcodes_' + count + '_labels.pdf');
+  pdf.save('Barcodes_' + cards.length + '_labels.pdf');
+  document.body.removeChild(renderArea);
 
-  document.querySelector('.msg').textContent = '✅ Download started!';
-  document.querySelector('.sub').textContent = count + ' label(s) saved to your Downloads folder.';
-  document.querySelector('.progress').style.display = 'none';
-  // Window stays open — user can close manually
-};
-<\/script>
-</body>
-</html>`);
-  downloadWin.document.close();
+  btn.innerHTML = origText;
+  btn.disabled = false;
 
-  // Auto-deselect and reset qty after download
+  // Auto-deselect after download
   setTimeout(() => {
     selected.forEach(idx => rowQty.delete(idx));
     selected.clear();
     document.getElementById('selCount').textContent = 0;
     document.getElementById('headerSel').textContent = 0;
     document.getElementById('selBar').className = 'sel-bar';
-    syncSelectAllUI();
-    render();
-  }, 900);
+    syncSelectAllUI(); render();
+  }, 500);
 }
 
 // ── THEME ──
